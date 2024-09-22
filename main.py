@@ -1,7 +1,7 @@
 import flet as ft
-import requests
 import os
 import time
+import httpx
 
 def main(page: ft.Page):
     page.title = "Remove Background App"
@@ -14,33 +14,34 @@ def main(page: ft.Page):
             remove_bg_button.disabled = False
             remove_bg_button.update()
 
-    def remove_background(e):
+    async def remove_background(e):
         if selected_file.value:
-            with open(pick_files_dialog.result.files[0].path, "rb") as file:
-                response = requests.post("https://apitoflet.newposts.duckdns.org/remove-background/", files={"file": file})
+            file_path = pick_files_dialog.result.files[0].path
+            
+            async with httpx.AsyncClient() as client:
+                with open(file_path, "rb") as file:
+                    files = {"file": (os.path.basename(file_path), file, "image/png")}
+                    response = await client.post(
+                        "https://apitoflet.newposts.duckdns.org/remove-background/",
+                        files=files
+                    )
             
             if response.status_code == 200:
-                # Obtenir le nom de fichier pour l'export depuis les headers
                 export_filename = response.headers.get('Export-Filename', 'image_sans_fond.png')
                 
-                # Générer un nom de fichier temporaire unique
                 timestamp = int(time.time() * 1000)
                 temp_file_path = f"temp_image_{timestamp}.png"
                 
-                # Sauvegarder temporairement l'image reçue
                 with open(temp_file_path, "wb") as f:
                     f.write(response.content)
                 
-                # Mettre à jour l'image dans l'interface
                 image.src = temp_file_path
                 image.visible = True
                 save_button.disabled = False
                 
-                # Stocker le nom de fichier pour l'export et le chemin temporaire
                 remove_background.export_filename = export_filename
                 remove_background.temp_file_path = temp_file_path
                 
-                # Supprimer l'ancienne image temporaire si elle existe
                 if hasattr(remove_background, 'previous_temp_file'):
                     try:
                         os.remove(remove_background.previous_temp_file)
@@ -48,9 +49,9 @@ def main(page: ft.Page):
                         pass
                 remove_background.previous_temp_file = temp_file_path
                 
-                page.update()
+                page.update()  # Changé de update_async() à update()
             else:
-                print("Erreur lors de la suppression de l'arrière-plan")
+                print(f"Erreur lors de la suppression de l'arrière-plan: {response.status_code}")
 
     def save_image(e):
         if hasattr(remove_background, 'export_filename') and hasattr(remove_background, 'temp_file_path'):
@@ -60,7 +61,6 @@ def main(page: ft.Page):
         if e.path and hasattr(remove_background, 'temp_file_path'):
             os.rename(remove_background.temp_file_path, e.path)
             print(f"Image sauvegardée : {e.path}")
-            # Réinitialiser le chemin du fichier temporaire après la sauvegarde
             remove_background.temp_file_path = None
 
     pick_files_dialog = ft.FilePicker(on_result=pick_files_result)
